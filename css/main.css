@@ -84,6 +84,14 @@ body {
     position: relative;
 }
 
+.column-title.overdue {
+    background: linear-gradient(135deg, #dc2626, #ef4444);
+}
+
+.column-title.archive {
+    background: linear-gradient(135deg, var(--gray-700), #475569);
+}
+
 .column-stats {
     padding: 8px 20px;
     font-size: 0.9rem;
@@ -168,6 +176,11 @@ body {
     background: var(--primary);
     color: white;
     transform: scale(1.05);
+}
+
+.btn-action.btn-archive:hover {
+    background: var(--warning);
+    color: white;
 }
 
 .btn-action:active {
@@ -646,10 +659,15 @@ body {
 }
 
 .task-card.dragging {
-    opacity: 0.8;
+    opacity: 0.5;
     transform: scale(1.02);
     z-index: 1000;
     box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.25);
+    cursor: grabbing;
+}
+
+.task-card[draggable="true"] {
+    cursor: grab;
 }
 
 .kanban-column.active {

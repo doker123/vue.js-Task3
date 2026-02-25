@@ -15,7 +15,7 @@ const taskCard = {
             required: true
         }
     },
-    emits: ['update-card', 'remove-card', 'move-card', 'return-card'],
+    emits: ['update-card', 'remove-card', 'move-card', 'return-card', 'archive-card', 'drag-start', 'drag-end', 'drag-over', 'drop'],
     data() {
         return {
             isEditing: false,
@@ -28,13 +28,16 @@ const taskCard = {
         canMoveBackward() {
             if (!this.availableColumns) return false;
             const cid = Number(this.columnId);
-            return cid !== 4 && this.getColumnIndex(cid) > 0;
+            return cid !== 4 && cid !== 5 && this.getColumnIndex(cid) > 0;
         },
         canMoveForward() {
             if (!this.availableColumns) return false;
             const cid = Number(this.columnId);
             const currentIndex = this.getColumnIndex(cid);
             return currentIndex < this.availableColumns.length - 1;
+        },
+        isDraggable() {
+            return !this.isEditing;
         }
     },
     methods: {
@@ -77,6 +80,43 @@ const taskCard = {
                 console.error('[taskCard] moveBackward: card invalid', this.card);
                 return;
             }
+
+
+            if (this.columnId === 4) {
+                const reason = prompt('Укажите причину возврата в тестирование:');
+                if (reason === null || reason.trim() === '') return;
+                this.$emit('return-card', {
+                    cardId: this.card.id,
+                    reason: reason.trim(),
+                    targetColumnId: 3
+                });
+                return;
+            }
+
+
+            if (this.columnId === 3) {
+                const reason = prompt('Укажите причину возврата в работу:');
+                if (reason === null || reason.trim() === '') return;
+                this.$emit('return-card', {
+                    cardId: this.card.id,
+                    reason: reason.trim(),
+                    targetColumnId: 2
+                });
+                return;
+            }
+
+
+            if (this.columnId === 5) {
+                const reason = prompt('Укажите причину возврата в тестирование:');
+                if (reason === null || reason.trim() === '') return;
+                this.$emit('return-card', {
+                    cardId: this.card.id,
+                    reason: reason.trim(),
+                    targetColumnId: 3
+                });
+                return;
+            }
+
             this.$emit('move-card', {
                 cardId: this.card.id,
                 direction: 'backward'
@@ -101,13 +141,33 @@ const taskCard = {
                 targetColumnId: 2
             });
         },
+        archiveCard() {
+            this.$emit('archive-card', this.card.id);
+        },
+        onDragStart(event) {
+            event.dataTransfer.setData('text/plain', JSON.stringify({
+                cardId: this.card.id,
+                sourceColumnId: this.columnId
+            }));
+            event.dataTransfer.effectAllowed = 'move';
+            this.$emit('drag-start', this.card.id);
+        },
+        onDragEnd() {
+            this.$emit('drag-end');
+        },
         getColumnIndex(columnId) {
             if (!this.availableColumns) return -1;
             return this.availableColumns.findIndex(col => col.id === columnId);
         }
     },
     template: `
-  <div class="task-card">
+  <div 
+    class="task-card" 
+    :class="{ dragging: isDragging, editing: isEditing }"
+    draggable="true"
+    @dragstart="onDragStart"
+    @dragend="onDragEnd"
+  >
     <div class="card-header">
       <h4 class="card-title">{{ card.title }}</h4>
       <div class="card-actions">
@@ -126,12 +186,12 @@ const taskCard = {
           🗑️
         </button>
         <button
-          v-if="columnId === 3"
-          @click="returnCard"
-          class="btn-action btn-return"
-          title="Вернуть в работу"
+          v-if="columnId === 4"
+          @click="archiveCard"
+          class="btn-action btn-archive"
+          title="Архивировать карточку"
         >
-          ↩️
+          📦
         </button>
       </div>
     </div>
@@ -196,7 +256,7 @@ const taskCard = {
       <button
         @click="moveBackward"
         class="btn-move btn-backward"
-        :disabled="columnId === 4 || getColumnIndex(columnId) <= 0 || columnId === 3"
+        :disabled="columnId === 5 || columnId === 6 || getColumnIndex(columnId) <= 0"
         title="Переместить в предыдущую колонку"
       >
         ◀️
@@ -204,7 +264,7 @@ const taskCard = {
       <button
         @click="moveForward"
         class="btn-move btn-forward"
-        :disabled="false"
+        :disabled="columnId === 5 || columnId === 6"
         title="Переместить в следующую колонку"
       >
         ▶️
@@ -234,9 +294,18 @@ const columnBoard = {
         columns: {
             type: Array,
             required: true
+        },
+        isArchive: {
+            type: Boolean,
+            default: false
         }
     },
-    emits: ['move-card', 'remove-card', 'update-card', 'return-card'],
+    emits: ['move-card', 'remove-card', 'update-card', 'return-card', 'archive-card', 'drop-card'],
+    data() {
+        return {
+            isDragOver: false
+        };
+    },
     methods: {
         handleMoveCard(payload) {
             console.log('[columnBoard] move-card received:', payload);
@@ -257,13 +326,49 @@ const columnBoard = {
             console.log('[columnBoard] return-card received:', payload);
             this.$emit('return-card', payload);
         },
+        handleArchiveCard(cardId) {
+            console.log('[columnBoard] archive-card received:', cardId);
+            this.$emit('archive-card', cardId);
+        },
+        handleDragOver(event) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            this.isDragOver = true;
+        },
+        handleDragLeave() {
+            this.isDragOver = false;
+        },
+        handleDrop(event) {
+            event.preventDefault();
+            this.isDragOver = false;
+            
+            const data = event.dataTransfer.getData('text/plain');
+            if (!data) return;
+            
+            try {
+                const { cardId, sourceColumnId } = JSON.parse(data);
+                this.$emit('drop-card', {
+                    cardId,
+                    sourceColumnId,
+                    targetColumnId: this.columnId
+                });
+            } catch (e) {
+                console.error('[columnBoard] Error parsing drop data:', e);
+            }
+        },
         handleColumnBack() {
             alert('Массовый возврат всех задач из тестирования в работу');
         }
     },
     template: `
-  <div class="kanban-column">
-    <h3 class="column-title">{{ title }}</h3>
+  <div
+    class="kanban-column"
+    :class="{ active: isDragOver }"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
+    <h3 class="column-title" :class="{ overdue: columnId === 5, archive: columnId === 6 }">{{ title }}</h3>
     <p class="column-stats">
       Задач: {{ cardsTask.length }} / ∞
     </p>
@@ -278,6 +383,7 @@ const columnBoard = {
       @update-card="handleUpdateCard"
       @move-card="handleMoveCard"
       @return-card="handleReturnCard"
+      @archive-card="handleArchiveCard"
     ></task-card>
 
     <div v-if="cardsTask.length === 0" class="empty-column">
@@ -300,6 +406,8 @@ const KanbanBoard = {
                 { id: 2, max: Infinity, title: "В работе", cardsTask: [] },
                 { id: 3, max: Infinity, title: "Тестирование", cardsTask: [] },
                 { id: 4, max: Infinity, title: "Выполненные задачи", cardsTask: [] },
+                { id: 5, max: Infinity, title: "Просроченные задачи", cardsTask: [] },
+                { id: 6, max: Infinity, title: "Архив", cardsTask: [] },
             ],
             errorMessage: '',
             title: '',
@@ -317,12 +425,38 @@ const KanbanBoard = {
         },
         load() {
             const saved = localStorage.getItem('tasks');
+            const defaultColumns = [
+                { id: 1, max: Infinity, title: "Запланированные задачи", cardsTask: [] },
+                { id: 2, max: Infinity, title: "В работе", cardsTask: [] },
+                { id: 3, max: Infinity, title: "Тестирование", cardsTask: [] },
+                { id: 4, max: Infinity, title: "Выполненные задачи", cardsTask: [] },
+                { id: 5, max: Infinity, title: "Просроченные задачи", cardsTask: [] },
+                { id: 6, max: Infinity, title: "Архив", cardsTask: [] },
+            ];
+            
             if (saved) {
                 try {
-                    this.columns = JSON.parse(saved);
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length >= 6) {
+                        this.columns = parsed;
+                    } else if (Array.isArray(parsed) && parsed.length > 0) {
+                        this.columns = defaultColumns.map(col => {
+                            const existing = parsed.find(c => c.id === col.id);
+                            return existing || col;
+                        });
+                        this.save();
+                    } else {
+                        this.columns = defaultColumns;
+                        this.save();
+                    }
                 } catch (e) {
                     console.error('Error loading from localStorage:', e);
+                    this.columns = defaultColumns;
+                    this.save();
                 }
+            } else {
+                this.columns = defaultColumns;
+                this.save();
             }
         },
         addTask() {
@@ -343,7 +477,8 @@ const KanbanBoard = {
                 dateDeadLine: this.dateDeadLine ? new Date(this.dateDeadLine).getTime() : null,
                 completedAt: null,
                 reasonsForTheRefund: null,
-                lastEditedAt: Date.now()
+                lastEditedAt: Date.now(),
+                isOverdue: false
             };
             this.columns[0].cardsTask.push(card);
             this.save();
@@ -366,6 +501,58 @@ const KanbanBoard = {
             if (!card) return;
             card.lastEditedAt = Date.now();
             this.save();
+        },
+        checkOverdueCards() {
+            const now = Date.now();
+            this.columns.forEach(column => {
+                column.cardsTask.forEach(card => {
+                    if (card.dateDeadLine && card.dateDeadLine < now && !card.completedAt) {
+                        card.isOverdue = true;
+                    }
+                });
+            });
+        },
+        moveOverdueToSpecialColumn() {
+            const now = Date.now();
+            const performedColumn = this.columns.find(col => col.id === 4);
+            const testingColumn = this.columns.find(col => col.id === 3);
+            const overdueColumn = this.columns.find(col => col.id === 5);
+
+            if (!performedColumn || !overdueColumn || !testingColumn) return;
+
+            const cardsToMove = [];
+            
+
+            performedColumn.cardsTask.forEach(card => {
+                if (card.dateDeadLine && card.dateDeadLine < now) {
+                    card.isOverdue = true;
+                    cardsToMove.push(card);
+                }
+            });
+
+            testingColumn.cardsTask.forEach(card => {
+                if (card.dateDeadLine && card.dateDeadLine < now) {
+                    card.isOverdue = true;
+                    cardsToMove.push(card);
+                }
+            });
+
+            cardsToMove.forEach(card => {
+                for (const column of this.columns) {
+                    const index = column.cardsTask.findIndex(c => c.id === card.id);
+                    if (index !== -1) {
+                        column.cardsTask.splice(index, 1);
+                        break;
+                    }
+                }
+                if (!overdueColumn.cardsTask.some(c => c.id === card.id)) {
+                    overdueColumn.cardsTask.push(card);
+                }
+            });
+
+            if (cardsToMove.length > 0) {
+                this.save();
+            }
         },
         handleMoveCard({ cardId, direction }) {
             console.log('[KanbanBoard] moveCard called:', { cardId, direction });
@@ -395,6 +582,16 @@ const KanbanBoard = {
 
             if (targetColumnIndex < 0 || targetColumnIndex >= this.columns.length) return;
 
+            if (currentColumnIndex === 3 && targetColumnIndex === 2) {
+                console.warn('Перемещение запрещён: из Выполненных в Тестирование');
+                return;
+            }
+
+            if (currentColumnIndex === 2 && targetColumnIndex === 1) {
+                console.warn('Перемещение запрещён: из Тестирования в В работе');
+                return;
+            }
+
             if (targetColumnIndex === 3) {
                 const now = Date.now();
                 card.isOverdue = card.dateDeadLine && card.dateDeadLine < now;
@@ -404,6 +601,11 @@ const KanbanBoard = {
                 card.isOverdue = false;
                 card.completedAt = null;
             }
+            
+
+            if (currentColumnIndex === 2 && targetColumnIndex === 3 && card.isOverdue) {
+                targetColumnIndex = 4;
+            }
 
             this.moveToColumn(card, this.columns[targetColumnIndex].id);
         },
@@ -411,9 +613,71 @@ const KanbanBoard = {
             console.log('[KanbanBoard] returnCard called:', { cardId, reason, targetColumnId });
             const card = this.findCardById(cardId);
             if (!card) return;
-            card.reasonsForTheRefund = reason;
+
+
+            const sourceColumn = this.columns.find(col =>
+                col.cardsTask.some(c => c.id === cardId)
+            );
+            let fullReason = reason;
+            if (sourceColumn) {
+                if (sourceColumn.id === 4 && targetColumnId === 3) {
+                    fullReason = `[Из Выполненных в Тестирование] ${reason}`;
+                } else if (sourceColumn.id === 3 && targetColumnId === 2) {
+                    fullReason = `[Из Тестирования в В работу] ${reason}`;
+                } else if (sourceColumn.id === 5 && targetColumnId === 3) {
+                    fullReason = `[Из Просроченных в Тестирование] ${reason}`;
+                }
+            }
+
+            card.reasonsForTheRefund = fullReason;
             card.completedAt = null;
             card.isOverdue = false;
+            card.lastEditedAt = Date.now();
+            this.moveToColumn(card, targetColumnId);
+        },
+        handleArchiveCard(cardId) {
+            console.log('[KanbanBoard] archiveCard called:', cardId);
+            const card = this.findCardById(cardId);
+            if (!card) return;
+            this.moveToColumn(card, 6);
+        },
+        handleDropCard({ cardId, sourceColumnId, targetColumnId }) {
+            console.log('[KanbanBoard] dropCard called:', { cardId, sourceColumnId, targetColumnId });
+            const card = this.findCardById(cardId);
+            if (!card) return;
+
+            if (sourceColumnId === targetColumnId) return;
+
+
+            if (sourceColumnId === 4 && targetColumnId === 3) {
+                console.warn('Drag-n-drop запрещён: из Выполненных в Тестирование');
+                return;
+            }
+
+
+            if (sourceColumnId === 3 && targetColumnId === 2) {
+                console.warn('Drag-n-drop запрещён: из Тестирования в В работе');
+                return;
+            }
+
+            if (targetColumnId === 3) {
+                const now = Date.now();
+                card.isOverdue = card.dateDeadLine && card.dateDeadLine < now;
+                card.completedAt = now;
+                card.reasonsForTheRefund = null;
+
+                if (card.isOverdue) {
+                    targetColumnId = 5;
+                }
+            } else if (sourceColumnId === 3 && targetColumnId !== 4) {
+                card.isOverdue = false;
+                card.completedAt = null;
+            }
+
+            if (targetColumnId === 4 && card.dateDeadLine && card.dateDeadLine < Date.now()) {
+                card.isOverdue = true;
+            }
+
             this.moveToColumn(card, targetColumnId);
         },
         moveToColumn(card, targetColumnId) {
@@ -446,12 +710,18 @@ const KanbanBoard = {
                 { id: 2, max: Infinity, title: "В работе", cardsTask: [] },
                 { id: 3, max: Infinity, title: "Тестирование", cardsTask: [] },
                 { id: 4, max: Infinity, title: "Выполненные задачи", cardsTask: [] },
+                { id: 5, max: Infinity, title: "Просроченные задачи", cardsTask: [] },
+                { id: 6, max: Infinity, title: "Архив", cardsTask: [] },
             ];
             this.save();
         },
     },
     mounted() {
         this.load();
+        this.moveOverdueToSpecialColumn();
+        setInterval(() => {
+            this.moveOverdueToSpecialColumn();
+        }, 60000);
     },
     template: `
   <div class="kanban-board">
@@ -468,6 +738,8 @@ const KanbanBoard = {
         @remove-card="removeCard"
         @update-card="handleUpdateCard"
         @return-card="handleReturnCard"
+        @archive-card="handleArchiveCard"
+        @drop-card="handleDropCard"
       />
     </div>
     <div class="controls">
